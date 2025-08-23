@@ -1,0 +1,181 @@
+package dev.zyklone.netwatch.core;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.*;
+import java.util.function.BiConsumer;
+
+public class NetWatchAPI implements Closeable {
+    private final ExecutorService exec;
+    private final Gson gson = new Gson();
+    private final HttpClient hc = HttpClient.newHttpClient();
+    private final Cache<@NotNull UUID, List<NetWatchResponse>> cache;
+    private final List<NetWatchSource> sources;
+
+    @Nullable
+    private final String api;
+
+    /**
+     * Create new API instance
+     * @param executor thread pool
+     * @param cacheMax max cache size
+     * @param cacheExpire cache expiration (seconds)
+     * @param sources sources list
+     * @param api API token
+     */
+    public NetWatchAPI(
+            ExecutorService executor,
+            int cacheMax, long cacheExpire,
+            List<NetWatchSource> sources,
+            @Nullable String api
+    ) {
+        this.exec = executor;
+        this.cache = Caffeine.newBuilder()
+                .maximumSize(cacheMax)
+                .expireAfterWrite(cacheExpire, TimeUnit.SECONDS)
+                .build();
+        this.sources = sources;
+        this.api = api == null || api.isEmpty() ? null : "Bearer " + api;
+    }
+
+    /**
+     * Check sources
+     * @param executor thread pool
+     * @param sources sources list
+     * @param token API token
+     * @param errorHandler error handler, internal error occurred if source is null
+     * @param timeout timeout millis
+     * @return passed sources
+     */
+    public static List<NetWatchSource> check(ExecutorService executor, List<NetWatchSource> sources, String token, BiConsumer<NetWatchSource, Exception> errorHandler, long timeout) {
+        final String authorization = "Bearer " + token;
+        HttpClient hc = HttpClient.newHttpClient();
+        List<CompletableFuture<NetWatchSource>> futures = sources.parallelStream()  // check all sources async
+                .map(it -> CompletableFuture.supplyAsync(() -> {
+                    try {
+                        HttpResponse<String> resp = hc.send(it.check(authorization), HttpResponse.BodyHandlers.ofString());
+                        if (resp.statusCode() == 200)
+                            return it;
+                        else {
+                            errorHandler.accept(it, new RuntimeException("Remote returns " + resp.statusCode()));   // bad return code
+                            return null;
+                        }
+                    } catch (Exception e) {
+                        errorHandler.accept(it, e);
+                        return null;
+                    }
+                }, executor))
+                .toList();
+
+        // wait for results
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(timeout, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            errorHandler.accept(null, e);
+        }
+        hc.close(); // shutdown http client
+
+        return futures.parallelStream()
+                .filter(it -> it.isDone() && !it.isCompletedExceptionally())    // filter completed
+                .map(it -> it.getNow(null)) // map results
+                .filter(Objects::nonNull)   // exclude nulls
+                .toList();
+    }
+
+    /**
+     * Query ban records with blocking
+     * @param uuid target player UUID
+     * @param timeout timeout millis
+     * @return results list
+     */
+    public List<NetWatchResponse> query(UUID uuid, long timeout) {
+        List<CompletableFuture<NetWatchResponse>> comp = queryAsync(uuid);
+        try {   // wait for all futures
+            CompletableFuture.allOf(comp.toArray(new CompletableFuture[0])).get(timeout, TimeUnit.MILLISECONDS);
+        } catch (Exception ignored) {}
+
+        List<NetWatchResponse> results = comp.parallelStream()
+                .filter(it -> it.isDone() && !it.isCompletedExceptionally())    // filter completed
+                .map(it -> it.getNow(null)) // map results
+                .filter(Objects::nonNull)   // exclude nulls
+                .toList();
+        this.cache.put(uuid, results);
+        return results;
+    }
+
+    /**
+     * Query valid bans
+     * @param uuid target player UUID
+     * @param timeout timeout millis
+     * @return true if banned
+     */
+    public boolean isBanned(UUID uuid, long timeout) {
+        return this.query(uuid, timeout)
+                .parallelStream()
+                .anyMatch(NetWatchResponse::valid);
+    }
+
+    /**
+     * Query all sources async
+     * @param uuid target player UUID
+     * @return futures list
+     */
+    public List<CompletableFuture<NetWatchResponse>> queryAsync(UUID uuid)  {
+        List<NetWatchResponse> resp = cache.getIfPresent(uuid);
+        if (resp == null) {
+            return sources.parallelStream()
+                    .map(src ->
+                                    CompletableFuture.supplyAsync(() -> {
+                                        try {
+                                            return query0(src, uuid);
+                                        } catch (Exception e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }, exec)
+                            ).toList();
+        }
+        return resp.parallelStream().map(CompletableFuture::completedFuture).toList();  // map cache
+    }
+
+    private NetWatchResponse query0(NetWatchSource source, UUID uuid) throws IOException, URISyntaxException, InterruptedException {
+        URI uri = source.queryUri(uuid);
+        HttpRequest.Builder req = HttpRequest.newBuilder(uri);
+        if (this.api != null)
+            req.header("Authorization", this.api);
+        HttpResponse<String> resp = this.hc.send(req.build(), HttpResponse.BodyHandlers.ofString());
+
+        if (resp.statusCode() != 200)
+            return null;    // failed or not found
+
+        // decode response
+        JsonObject json = this.gson.fromJson(resp.body(), JsonObject.class);
+        try {
+            String name = json.get("name").getAsString();
+            int count = json.get("count").getAsInt();
+            return new NetWatchResponse(uuid, name, count, source);
+        } catch (NullPointerException npe) {    // invalid response
+            return null;
+        }
+    }
+
+    @Override
+    public void close() {
+        this.exec.shutdown();
+        this.hc.close();
+    }
+}
