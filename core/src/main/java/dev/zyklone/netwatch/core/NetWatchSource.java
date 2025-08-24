@@ -27,7 +27,7 @@ public class NetWatchSource {
 
     public HttpRequest check(String authorization) throws URISyntaxException {
         HttpRequest.Builder req = HttpRequest.newBuilder(new URI("%s/check"))
-                .GET();
+                .HEAD();
         if (authorization != null)
             req.header("Authorization", authorization);
         return req
