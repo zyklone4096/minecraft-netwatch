@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"errors"
 	"log"
 	"os"
@@ -21,18 +20,25 @@ func Setup() error {
 	}
 
 	log.Println("Connecting to database")
-	sqlDB := sql.DB{}
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
-
 	db, err := gorm.Open(mysql.Open(conn), &gorm.Config{
-		ConnPool: &sqlDB,
-		Logger:   logger.Default.LogMode(logger.Silent),
+		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		return err
 	}
+
+	// test connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Minute)
+	if err = sqlDB.Ping(); err != nil {
+		return err
+	}
+
 	database = db
 
 	err = db.AutoMigrate(User{}, Record{})
