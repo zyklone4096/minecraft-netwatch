@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"server/cli"
 	"server/db"
 	"server/route"
 
@@ -41,6 +42,9 @@ func main() {
 	if bind == "" {
 		bind = ":8080"
 	}
+
+	go cli.StartCLI()
+
 	log.Printf("Serving at %s", bind)
 	err = http.ListenAndServe(bind, nil)
 	if err != nil {
