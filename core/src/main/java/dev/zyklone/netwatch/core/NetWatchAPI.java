@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -27,22 +26,17 @@ public class NetWatchAPI implements Closeable {
     private final Cache<@NotNull UUID, List<NetWatchResponse>> cache;
     private final List<NetWatchSource> sources;
 
-    @Nullable
-    private final String api;
-
     /**
      * Create new API instance
      * @param executor thread pool
      * @param cacheMax max cache size
      * @param cacheExpire cache expiration (seconds)
      * @param sources sources list
-     * @param api API token
      */
     public NetWatchAPI(
             ExecutorService executor,
             int cacheMax, long cacheExpire,
-            List<NetWatchSource> sources,
-            @Nullable String api
+            List<NetWatchSource> sources
     ) {
         this.exec = executor;
         this.cache = Caffeine.newBuilder()
@@ -50,25 +44,22 @@ public class NetWatchAPI implements Closeable {
                 .expireAfterWrite(cacheExpire, TimeUnit.SECONDS)
                 .build();
         this.sources = sources;
-        this.api = api == null || api.isEmpty() ? null : "Bearer " + api;
     }
 
     /**
      * Check sources
      * @param executor thread pool
      * @param sources sources list
-     * @param token API token
      * @param errorHandler error handler, internal error occurred if source is null
      * @param timeout timeout millis
      * @return passed sources
      */
-    public static List<NetWatchSource> check(ExecutorService executor, List<NetWatchSource> sources, String token, BiConsumer<NetWatchSource, Exception> errorHandler, long timeout) {
-        final String authorization = "Bearer " + token;
+    public static List<NetWatchSource> check(ExecutorService executor, List<NetWatchSource> sources, BiConsumer<NetWatchSource, Exception> errorHandler, long timeout) {
         HttpClient hc = HttpClient.newHttpClient();
         List<CompletableFuture<NetWatchSource>> futures = sources.parallelStream()  // check all sources async
                 .map(it -> CompletableFuture.supplyAsync(() -> {
                     try {
-                        HttpResponse<String> resp = hc.send(it.check(authorization), HttpResponse.BodyHandlers.ofString());
+                        HttpResponse<String> resp = hc.send(it.check(), HttpResponse.BodyHandlers.ofString());
                         if (resp.statusCode() == 200)
                             return it;
                         else {
@@ -84,7 +75,10 @@ public class NetWatchAPI implements Closeable {
 
         // wait for results
         try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(timeout, TimeUnit.MILLISECONDS);
+            CompletableFuture<Void> f = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            if (timeout > 0)
+                f.get(timeout, TimeUnit.MILLISECONDS);
+            else f.get();
         } catch (Exception e) {
             errorHandler.accept(null, e);
         }
@@ -155,8 +149,9 @@ public class NetWatchAPI implements Closeable {
     private NetWatchResponse query0(NetWatchSource source, UUID uuid) throws IOException, URISyntaxException, InterruptedException {
         URI uri = source.queryUri(uuid);
         HttpRequest.Builder req = HttpRequest.newBuilder(uri);
-        if (this.api != null)
-            req.header("Authorization", this.api);
+        String auth = source.getAuthorization();
+        if (auth != null)
+            req.header("Authorization", auth);
         HttpResponse<String> resp = this.hc.send(req.build(), HttpResponse.BodyHandlers.ofString());
 
         if (resp.statusCode() != 200)

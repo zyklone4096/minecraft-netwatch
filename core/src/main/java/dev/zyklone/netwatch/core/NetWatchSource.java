@@ -11,10 +11,12 @@ import java.util.UUID;
 public class NetWatchSource {
     private final String base;
     private final int threshold;
+    private final String authorization;
 
-    private NetWatchSource(String base, int threshold) {
+    private NetWatchSource(String base, int threshold, String api) {
         this.base = base;
         this.threshold = threshold;
+        this.authorization = api == null ? null : "Bearer " + api;
     }
 
     public String getBase() {
@@ -25,11 +27,15 @@ public class NetWatchSource {
         return threshold;
     }
 
-    public HttpRequest check(String authorization) throws URISyntaxException {
-        HttpRequest.Builder req = HttpRequest.newBuilder(new URI("%s/check"))
+    public String getAuthorization() {
+        return authorization;
+    }
+
+    public HttpRequest check() throws URISyntaxException {
+        HttpRequest.Builder req = HttpRequest.newBuilder(new URI("%s/check".formatted(this.base)))
                 .HEAD();
-        if (authorization != null)
-            req.header("Authorization", authorization);
+        if (this.authorization != null)
+            req.header("Authorization", this.authorization);
         return req
                 .build();
     }
@@ -44,11 +50,11 @@ public class NetWatchSource {
         return new URI("%s/query?uuid=%s".formatted(base, URLEncoder.encode(target.toString(), StandardCharsets.UTF_8)));
     }
 
-    public static NetWatchSource create(String base, int threshold) throws URISyntaxException {
+    public static NetWatchSource create(String base, int threshold, String api) throws URISyntaxException {
         base = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
         new URI(base);  // URI syntax check
         return new NetWatchSource(
-                base, threshold
+                base, threshold, api
         );
     }
 }
