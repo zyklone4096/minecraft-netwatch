@@ -1,0 +1,10 @@
+{
+  "sources": [
+    // REPLACE WITH YOUR ACTUAL SOURCE
+//    {
+//      "base": "http://127.0.0.1:8080/",
+//      "threshold": 1,
+//      "apiKey": "114514"
+//    }
+  ]
+}

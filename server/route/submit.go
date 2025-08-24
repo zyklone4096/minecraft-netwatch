@@ -11,8 +11,8 @@ import (
 )
 
 type submitBody struct {
-	Id     string
-	Reason *string
+	Id     string  `json:"id"`
+	Reason *string `json:"reason"`
 }
 
 func submitRoute(writer http.ResponseWriter, request *http.Request, user *db.User) {
@@ -67,9 +67,10 @@ func submitRoute(writer http.ResponseWriter, request *http.Request, user *db.Use
 	err = db.RecordPut(request.Context(), player, user.Id, args.Reason)
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
-		log.Printf("Error putting records of %s by %s: %v", player, user.Name, err)
+		log.Printf("Error putting records of %s by %s: %v", args.Id, user.Name, err)
 		return
 	} else {
 		writer.WriteHeader(http.StatusOK)
+		log.Printf("%s: submitted record for player %s: %s", user.Name, args.Id, *args.Reason)
 	}
 }

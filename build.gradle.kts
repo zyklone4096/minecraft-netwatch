@@ -1,5 +1,6 @@
 plugins {
     id("java-library")
+    id("com.gradleup.shadow") version "9.0.2"
 }
 
 group = "dev.zyklone"
@@ -8,15 +9,32 @@ version = "1.0-SNAPSHOT"
 subprojects {
     plugins.apply("java")
     plugins.apply("java-library")
+    plugins.apply("com.gradleup.shadow")
 
     repositories {
         mavenCentral()
     }
 
+    val include = configurations.create("include")
+    configurations["implementation"].extendsFrom(include)
+
     dependencies {
         testImplementation(platform("org.junit:junit-bom:5.10.0"))
         testImplementation("org.junit.jupiter:junit-jupiter")
         testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    }
+
+    tasks.shadowJar {
+        configurations = listOf(include)
+
+        dependencies {
+            exclude(dependency("org.slf4j:.*"))
+            exclude(dependency("com.google.code.gson:gson"))
+            exclude(dependency("org.jspecify:.*"))
+            exclude(dependency("com.google.errorprone:.*"))
+        }
+
+        relocate("com.github", "dev.zyklone.netwatch.libs.com.github")
     }
 
     tasks.test {

@@ -47,6 +47,22 @@ public class NetWatchAPI implements Closeable {
     }
 
     /**
+     * Get ExecutorService object passed in constructor
+     * @return executor
+     */
+    public ExecutorService getExecutor() {
+        return exec;
+    }
+
+    /**
+     * returns false if no source configured
+     * @return result
+     */
+    public boolean available() {
+        return !this.sources.isEmpty();
+    }
+
+    /**
      * Check sources
      * @param executor thread pool
      * @param sources sources list
@@ -59,6 +75,9 @@ public class NetWatchAPI implements Closeable {
         List<CompletableFuture<NetWatchSource>> futures = sources.parallelStream()  // check all sources async
                 .map(it -> CompletableFuture.supplyAsync(() -> {
                     try {
+                        if (!it.isCheck())
+                            return it;    // no check needed
+
                         HttpResponse<String> resp = hc.send(it.check(), HttpResponse.BodyHandlers.ofString());
                         if (resp.statusCode() == 200)
                             return it;
@@ -170,6 +189,60 @@ public class NetWatchAPI implements Closeable {
         }
     }
 
+    /**
+     * Submit ban records
+     * @param uuid target player
+     * @param reason reason
+     * @param resultHandler result handler, only used if request sent
+     * @param errorHandler error handler, only used if internal error occurred
+     */
+    public void submitAsync(UUID uuid, String reason, BiConsumer<NetWatchSource, Integer> resultHandler, BiConsumer<NetWatchSource, Exception> errorHandler) {
+        for (NetWatchSource source : this.sources) {
+            if (source.isSubmit()) {    // filter sources to submit
+                this.exec.execute(() -> {
+                    try {
+                        int result = this.submit0(source, uuid, reason);
+                        if (result != 0)
+                            resultHandler.accept(source, result);
+                    } catch (Exception e) {
+                        errorHandler.accept(source, e);
+                    }
+                });
+            }
+        }
+    }
+
+    /**
+     * Submit ban records
+     * @param uuid target player
+     * @param reason reason
+     * @return futures for all sources
+     */
+    public List<CompletableFuture<Integer>> submitAsync(UUID uuid, String reason) {
+        return this.sources.parallelStream()
+                .filter(NetWatchSource::isSubmit)   // filter source to submit
+                .map(it -> CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return submit0(it, uuid, reason);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }, this.exec))
+                .toList();
+    }
+
+    private int submit0(NetWatchSource source, UUID uuid, String reason) throws IOException, InterruptedException, URISyntaxException {
+        HttpRequest req = source.submit(this.gson, uuid, reason);
+        if (req == null) {
+            return 0;
+        }
+
+        return this.hc.send(req, HttpResponse.BodyHandlers.ofByteArray()).statusCode();
+    }
+
+    /**
+     * Closes thread pool and HTTP client
+     */
     @Override
     public void close() {
         this.exec.shutdown();
