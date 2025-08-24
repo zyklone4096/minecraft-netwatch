@@ -4,12 +4,14 @@ plugins {
 }
 
 group = "dev.zyklone"
-version = "1.0-SNAPSHOT"
+version = "1.0.0"
 
 subprojects {
     plugins.apply("java")
     plugins.apply("java-library")
     plugins.apply("com.gradleup.shadow")
+
+    version = rootProject.version
 
     repositories {
         mavenCentral()
