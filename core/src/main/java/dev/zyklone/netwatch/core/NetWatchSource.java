@@ -19,10 +19,6 @@ public class NetWatchSource {
         this.authorization = api == null ? null : "Bearer " + api;
     }
 
-    public String getBase() {
-        return base;
-    }
-
     public int getThreshold() {
         return threshold;
     }

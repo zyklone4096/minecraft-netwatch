@@ -4,7 +4,6 @@ import java.util.UUID;
 
 public record NetWatchResponse(
         UUID uuid,
-        String name,
         int count,
         NetWatchSource source
 ) {

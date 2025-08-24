@@ -100,11 +100,14 @@ public class NetWatchAPI implements Closeable {
     public List<NetWatchResponse> query(UUID uuid, long timeout) {
         List<CompletableFuture<NetWatchResponse>> comp = queryAsync(uuid);
         try {   // wait for all futures
-            CompletableFuture.allOf(comp.toArray(new CompletableFuture[0])).get(timeout, TimeUnit.MILLISECONDS);
+            CompletableFuture<Void> f = CompletableFuture.allOf(comp.toArray(new CompletableFuture[0]));
+            if (timeout > 0) {
+                f.get(timeout, TimeUnit.MILLISECONDS);
+            } else f.get();
         } catch (Exception ignored) {}
 
         List<NetWatchResponse> results = comp.parallelStream()
-                .filter(it -> it.isDone() && !it.isCompletedExceptionally())    // filter completed
+                .filter(it -> !it.isCompletedExceptionally())    // filter completed
                 .map(it -> it.getNow(null)) // map results
                 .filter(Objects::nonNull)   // exclude nulls
                 .toList();
@@ -160,9 +163,8 @@ public class NetWatchAPI implements Closeable {
         // decode response
         JsonObject json = this.gson.fromJson(resp.body(), JsonObject.class);
         try {
-            String name = json.get("name").getAsString();
             int count = json.get("count").getAsInt();
-            return new NetWatchResponse(uuid, name, count, source);
+            return new NetWatchResponse(uuid, count, source);
         } catch (NullPointerException npe) {    // invalid response
             return null;
         }
