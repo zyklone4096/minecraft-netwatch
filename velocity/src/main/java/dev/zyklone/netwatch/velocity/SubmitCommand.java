@@ -1,16 +1,14 @@
-package dev.zyklone.netwatch.paper;
+package dev.zyklone.netwatch.velocity;
 
+import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.proxy.Player;
 import net.kyori.adventure.text.Component;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Player;
-import org.jetbrains.annotations.NotNull;
 
+import java.util.Optional;
 import java.util.UUID;
 
-class SubmitCommand extends Command {
+public class SubmitCommand implements SimpleCommand {
     private final Component msgCompleted = Component.text()
             .append(NetWatchPlugin.header)
             .append(Component.text("Submitted to source"))
@@ -27,41 +25,27 @@ class SubmitCommand extends Command {
             .append(NetWatchPlugin.header)
             .append(Component.text("Target not found"))
             .build();
-    private final Component notJoined = Component.text()
-            .append(NetWatchPlugin.header)
-            .append(Component.text("You cannot submit a player who has not logged in before"))
-            .build();
-
-
-    SubmitCommand() {
-        super("netwatch-submit");
-        this.setPermission("netwatch.submit");
-    }
 
     @Override
-    public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String @NotNull [] args) {
+    public void execute(Invocation invocation) {
+        String[] args = invocation.arguments();
+        CommandSource sender = invocation.source();
+
         if (args.length < 1) {
             sender.sendMessage(this.msgUsage);
         } else {
             // find target player
             UUID target;
-            Player player = Bukkit.getPlayer(args[0]);
-            if (player == null) {   // parse UUID
+            Optional<Player> player = NetWatchPlugin.getInstance().getServer().getPlayer(args[0]);
+            if (player.isEmpty()) {   // parse UUID
                 try {
                     target = UUID.fromString(args[0]);
-
-                    // check if joined before
-                    OfflinePlayer op = Bukkit.getOfflinePlayer(target);
-                    if (!op.hasPlayedBefore() && !op.isOnline()) {
-                        sender.sendMessage(this.notJoined);
-                        return true;
-                    }
                 } catch (Exception e) { // invalid UUID
                     sender.sendMessage(this.msgNotFound);
-                    return true;
+                    return;
                 }
             } else {
-                target = player.getUniqueId();  // use UUID from player
+                target = player.get().getUniqueId();  // use UUID from player
             }
 
             // build reason
@@ -79,17 +63,15 @@ class SubmitCommand extends Command {
             }
 
             // submit
-            NetWatchPlugin.getApi().submitAsync(target, reason,
+            NetWatchPlugin.getInstance().getApi().submitAsync(target, reason,
                     (r, c) -> {
-                if (c == 200) {
-                    sender.sendMessage(Component.text().append(this.msgCompleted).append(Component.text(" " + r.getBase())).build());
-                } else {
-                    sender.sendMessage(Component.text().append(this.msgError).append(Component.text(String.format(" %s (%s)", r.getBase(), c))));
-                }
+                        if (c == 200) {
+                            sender.sendMessage(Component.text().append(this.msgCompleted).append(Component.text(" " + r.getBase())).build());
+                        } else {
+                            sender.sendMessage(Component.text().append(this.msgError).append(Component.text(String.format(" %s (%s)", r.getBase(), c))));
+                        }
                     },
                     (r, e) -> sender.sendMessage(Component.text().append(this.msgError).append(Component.text(String.format(" %s (%s)", r.getBase(), e.toString())))));
         }
-
-        return true;
     }
 }

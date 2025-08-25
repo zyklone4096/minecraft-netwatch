@@ -219,7 +219,7 @@ public class NetWatchAPI implements Closeable {
      * @return futures for all sources
      */
     public List<CompletableFuture<Integer>> submitAsync(UUID uuid, String reason) {
-        return this.sources.parallelStream()
+        List<CompletableFuture<Integer>> results = this.sources.parallelStream()
                 .filter(NetWatchSource::isSubmit)   // filter source to submit
                 .map(it -> CompletableFuture.supplyAsync(() -> {
                     try {
@@ -229,6 +229,8 @@ public class NetWatchAPI implements Closeable {
                     }
                 }, this.exec))
                 .toList();
+        this.cache.invalidate(uuid);    // invalidate cache after submit
+        return results;
     }
 
     private int submit0(NetWatchSource source, UUID uuid, String reason) throws IOException, InterruptedException, URISyntaxException {

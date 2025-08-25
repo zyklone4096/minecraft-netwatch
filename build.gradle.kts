@@ -31,12 +31,13 @@ subprojects {
 
         dependencies {
             exclude(dependency("org.slf4j:.*"))
-            exclude(dependency("com.google.code.gson:gson"))
             exclude(dependency("org.jspecify:.*"))
             exclude(dependency("com.google.errorprone:.*"))
         }
 
         relocate("com.github", "dev.zyklone.netwatch.libs.com.github")
+        archiveBaseName.set("NetWatch")
+        archiveAppendix.set(project.name)
     }
 
     tasks.test {

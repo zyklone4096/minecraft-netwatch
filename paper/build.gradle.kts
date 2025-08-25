@@ -50,3 +50,9 @@ tasks.register<Exec>("downloadVanillaServerFromMirror") {
     workingDir(dir)
     commandLine("curl", "-L", "https://bmclapi2.bangbang93.com/version/$version/server", "-o", "mojang_$version.jar")
 }
+
+tasks.shadowJar {
+    dependencies {
+        exclude(dependency("com.google.code.gson:gson"))
+    }
+}

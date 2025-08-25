@@ -7,3 +7,4 @@ rootProject.name = "NetWatch"
 
 include(":core")
 include(":paper")
+include(":velocity")
