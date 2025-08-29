@@ -23,11 +23,22 @@ jobs:
       - name: Build All
         run: "./gradlew buildServerWinX64 buildServerLinuxX64 :paper:shadowJar :velocity:shadowJar"
 
-      - name: Upload Artifacts
+      - name: Upload Server Linux64
         uses: actions/upload-artifact@v4
         with:
-          name: build-libs
-          path: |            
-            build/libs/**
+          name: NetWatch-linux-amd64
+          path: build/libs/NetWatch-linux-amd64
+
+      - name: Upload Server Windows64
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetWatch-windows-amd64.exe
+          path: build/libs/NetWatch-windows-amd64.exe
+
+      - name: Upload Plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetWatch-server-plugins
+          path: |             
             paper/build/libs/*-all.jar
             velocity/build/libs/*-all.jar
